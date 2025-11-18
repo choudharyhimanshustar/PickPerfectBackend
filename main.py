@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 app = FastAPI()
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env.development"))
-
+bucket_name = os.getenv("AWS_S3_BUCKET")
 # Allow CORS (for frontend)
 app.add_middleware(
     CORSMiddleware,
@@ -34,7 +34,7 @@ async def root():
 @app.get("/generate-presigned-url")
 def get_presigned_url(filename: str):
     try:
-        bucket_name = os.getenv("AWS_S3_BUCKET")
+        
         print("Loaded region name:", os.getenv("AWS_REGION"))
         print("Loaded bucket name:", bucket_name)
         
@@ -54,40 +54,33 @@ def get_presigned_url(filename: str):
     except NoCredentialsError:
         raise HTTPException(status_code=500, detail="AWS credentials not found")
 
-@app.get("/api/videos")
+@app.get("/all-videos")
 def get_all_videos():
-    try:
-        bucket_name = os.getenv("AWS_S3_BUCKET")
-        # List all objects in the bucket (optional: use Prefix="uploads/")
-        response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix="uploads/")
+    # List everything in bucket root (no folders)
+    response = s3_client.list_objects_v2(Bucket=bucket_name)
 
-        if "Contents" not in response:
-            return JSONResponse(content={"videos": []})
+    if "Contents" not in response:
+        return {"videos": []}
 
-        videos = []
-        for obj in response["Contents"]:
-            key = obj["Key"]
+    video_urls = []
 
-            # Only include video files (optional)
-            if not key.lower().endswith((".mp4", ".mov", ".mkv", ".avi")):
-                continue
+    for obj in response["Contents"]:
+        key = obj["Key"]
 
-            # Generate a presigned GET URL for each video
-            url = s3_client.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": bucket_name, "Key": key},
-                ExpiresIn=3600,  # 1 hour
-            )
+        # skip non-video files (optional)
+        if not key.lower().endswith((".mp4", ".mov", ".avi", ".webm", ".mkv")):
+            continue
 
-            videos.append({
-                "key": key,
-                "url": url,
-                "size": obj["Size"],
-                "lastModified": obj["LastModified"].isoformat()
-            })
+        # generate pre-signed URL
+        url = s3_client.generate_presigned_url(
+            ClientMethod="get_object",
+            Params={"Bucket": bucket_name, "Key": key},
+            ExpiresIn=3600
+        )
 
-        return JSONResponse(content={"videos": videos})
+        video_urls.append({
+            "key": key,
+            "url": url
+        })
 
-    except ClientError as e:
-        print("Error:", e)
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+    return {"videos": video_urls}
