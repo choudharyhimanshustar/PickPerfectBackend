@@ -1,0 +1,201 @@
+aiofiles==24.1.0
+aiohappyeyeballs==2.6.1
+aiohttp==3.12.14
+aiosignal==1.4.0
+anaconda-anon-usage @ file:///C:/b/abs_e8r_zga7xy/croot/anaconda-anon-usage_1732732454901/work
+annotated-types @ file:///C:/b/abs_0dmaoyhhj3/croot/annotated-types_1709542968311/work
+anyio==4.9.0
+archspec @ file:///croot/archspec_1709217642129/work
+attrs==25.3.0
+av==15.0.0
+azure-core==1.35.0
+azure-identity==1.23.0
+azure-keyvault==4.2.0
+azure-keyvault-certificates==4.10.0
+azure-keyvault-keys==4.11.0
+azure-keyvault-secrets==4.10.0
+azure-storage-blob==12.25.1
+azure-storage-queue==12.12.0
+boltons @ file:///C:/b/abs_45_52ughkz/croot/boltons_1737061711836/work
+boto3==1.40.59
+botocore==1.40.59
+Brotli @ file:///C:/b/abs_c415aux9ra/croot/brotli-split_1736182803933/work
+CacheControl==0.14.3
+cachetools==5.5.2
+certifi @ file:///C:/b/abs_8a944p1_gn/croot/certifi_1738623753421/work/certifi
+cffi @ file:///C:/b/abs_29_b57if3f/croot/cffi_1736184144340/work
+charset-normalizer @ file:///croot/charset-normalizer_1721748349566/work
+click==8.2.1
+colorama @ file:///C:/Users/dev-admin/perseverance-python-buildout/croot/colorama_1699472650914/work
+concurrent-log-handler==0.9.28
+conda @ file:///C:/b/abs_12ybmrg1d4/croot/conda_1738168389704/work
+conda-anaconda-telemetry @ file:///C:/b/abs_4c9llcc5ob/croot/conda-anaconda-telemetry_1736524617431/work
+conda-anaconda-tos @ file:///C:/b/abs_ceeuq0lee_/croot/conda-anaconda-tos_1739299022910/work
+conda-content-trust @ file:///C:/b/abs_bdfatn_wzf/croot/conda-content-trust_1714483201909/work
+conda-libmamba-solver @ file:///croot/conda-libmamba-solver_1737733694612/work/src
+conda-package-handling @ file:///C:/b/abs_7fz3aferfv/croot/conda-package-handling_1731369038903/work
+conda_package_streaming @ file:///C:/b/abs_bdz9vbvbh2/croot/conda-package-streaming_1731366449946/work
+coverage==7.9.2
+cryptography==45.0.5
+CurrencyConverter==0.18.9
+decorator==5.2.1
+distro @ file:///C:/b/abs_71xr36ua5r/croot/distro_1714488282676/work
+dnspython==2.7.0
+docstring_parser==0.16
+dotenv==0.9.9
+et_xmlfile==2.0.0
+eval_type_backport==0.2.2
+fastapi==0.116.1
+firebase_admin==7.1.0
+flake8==7.3.0
+forex-python==1.9.2
+frozendict @ file:///C:/b/abs_2alamqss6p/croot/frozendict_1713194885124/work
+frozenlist==1.7.0
+google-api-core==2.25.1
+google-auth==2.40.3
+google-cloud-core==2.4.3
+google-cloud-firestore==2.21.0
+google-cloud-speech==2.33.0
+google-cloud-storage==3.4.0
+google-cloud-texttospeech==2.27.0
+google-crc32c==1.7.1
+google-genai==1.25.0
+google-resumable-media==2.7.2
+googleapis-common-protos==1.70.0
+greenlet==3.2.3
+grpcio==1.73.1
+grpcio-status==1.73.1
+h11==0.16.0
+h2==4.3.0
+hpack==4.1.0
+httpcore==1.0.9
+httpx==0.28.1
+hyperframe==6.1.0
+idna @ file:///C:/b/abs_aad84bnnw5/croot/idna_1714398896795/work
+ImageIO==2.37.2
+imageio-ffmpeg==0.6.0
+importlib_metadata==8.7.0
+iniconfig==2.1.0
+isodate==0.7.2
+jiter==0.10.0
+jmespath==1.0.1
+jsonpatch @ file:///C:/b/abs_4fdm88t7zi/croot/jsonpatch_1714483974578/work
+jsonpointer==3.0.0
+langchain==0.3.26
+langchain-core==0.3.68
+langchain-openai==0.3.27
+langchain-text-splitters==0.3.8
+langgraph==0.5.2
+langgraph-checkpoint==2.1.0
+langgraph-prebuilt==0.5.2
+langgraph-sdk==0.1.72
+langsmith==0.4.5
+libmambapy @ file:///C:/b/abs_627vsv8bhu/croot/mamba-split_1734469608328/work/libmambapy
+livekit==1.0.11
+livekit-agents==1.2.1
+livekit-api==1.0.3
+livekit-blingfire==1.0.0
+livekit-plugins-google==1.2.1
+livekit-plugins-noise-cancellation==0.2.5
+livekit-protocol==1.0.4
+markdown-it-py @ file:///C:/Users/dev-admin/perseverance-python-buildout/croot/markdown-it-py_1699473886965/work
+mccabe==0.7.0
+mdurl @ file:///C:/Users/dev-admin/perseverance-python-buildout/croot/mdurl_1699473506455/work
+menuinst @ file:///C:/b/abs_fblttj5gp1/croot/menuinst_1738943438301/work
+mongoengine==0.29.1
+mongomock==4.3.0
+motor==3.7.1
+moviepy==2.2.1
+msal==1.32.3
+msal-extensions==1.3.1
+msgpack==1.1.1
+multidict==6.6.3
+nest-asyncio==1.6.0
+numpy==2.3.1
+openai==1.95.1
+opencensus==0.11.4
+opencensus-context==0.1.3
+opencensus-ext-azure==1.1.15
+opencensus-ext-logging==0.1.1
+openpyxl==3.1.5
+opentelemetry-api==1.35.0
+opentelemetry-exporter-otlp==1.35.0
+opentelemetry-exporter-otlp-proto-common==1.35.0
+opentelemetry-exporter-otlp-proto-grpc==1.35.0
+opentelemetry-exporter-otlp-proto-http==1.35.0
+opentelemetry-proto==1.35.0
+opentelemetry-sdk==1.35.0
+opentelemetry-semantic-conventions==0.56b0
+orjson==3.10.18
+ormsgpack==1.10.0
+packaging @ file:///C:/b/abs_3by6s2fa66/croot/packaging_1734472138782/work
+pandas==2.3.1
+pillow==11.3.0
+platformdirs @ file:///C:/Users/dev-admin/perseverance-python-buildout/croot/platformdirs_1701797392447/work
+pluggy @ file:///C:/b/abs_dfec_m79vo/croot/pluggy_1733170145382/work
+portalocker==3.2.0
+proglog==0.1.12
+prometheus_client==0.22.1
+propcache==0.3.2
+proto-plus==1.26.1
+protobuf==6.31.1
+psutil==7.0.0
+pyasn1==0.6.1
+pyasn1_modules==0.4.2
+pycodestyle==2.14.0
+pycosat @ file:///C:/b/abs_18nblzzn70/croot/pycosat_1736868434419/work
+pycparser @ file:///tmp/build/80754af9/pycparser_1636541352034/work
+pydantic==2.11.7
+pydantic_core==2.33.2
+pyflakes==3.4.0
+Pygments @ file:///C:/Users/dev-admin/perseverance-python-buildout/croot/pygments_1699474141968/work
+PyJWT==2.10.1
+pymongo==4.13.2
+PySocks @ file:///C:/Users/dev-admin/perseverance-python-buildout/croot/pysocks_1699473336188/work
+pytest==8.4.1
+pytest-asyncio==0.25.0
+pytest-cov==6.2.1
+pytest-mock==3.14.1
+python-dateutil==2.9.0.post0
+python-dotenv==1.1.1
+pytz==2025.2
+pywin32==310
+PyYAML==6.0.2
+razorpay==1.4.2
+redis==6.2.0
+regex==2024.11.6
+requests==2.32.4
+requests-toolbelt==1.0.0
+rich @ file:///C:/b/abs_8b92fzmygg/croot/rich_1732638991774/work
+rsa==4.9.1
+ruamel.yaml @ file:///C:/b/abs_0cunwx_ww6/croot/ruamel.yaml_1727980181547/work
+ruamel.yaml.clib @ file:///C:/b/abs_5fk8zi6n09/croot/ruamel.yaml.clib_1727769837359/work
+s3transfer==0.14.0
+sentinels==1.0.0
+setuptools==78.1.1
+simplejson==3.20.1
+six==1.17.0
+sniffio==1.3.1
+sounddevice==0.5.2
+SQLAlchemy==2.0.41
+starlette==0.46.2
+tenacity==8.5.0
+tiktoken==0.9.0
+tqdm @ file:///C:/b/abs_0eh9b6xugj/croot/tqdm_1738945553987/work
+truststore @ file:///C:/b/abs_494cm143zh/croot/truststore_1736550137835/work
+types-protobuf==4.25.0.20240417
+typing-inspection==0.4.1
+typing_extensions @ file:///C:/b/abs_0ffjxtihug/croot/typing_extensions_1734714875646/work
+tzdata==2025.2
+urllib3==2.5.0
+uuid==1.30
+uvicorn==0.35.0
+watchfiles==1.1.0
+websockets==15.0.1
+wheel==0.45.1
+win-inet-pton @ file:///C:/Users/dev-admin/perseverance-python-buildout/croot/win_inet_pton_1699472992992/work
+xlrd==2.0.2
+xxhash==3.5.0
+yarl==1.20.1
+zipp==3.23.0
+zstandard @ file:///C:/b/abs_31t8xmrv_h/croot/zstandard_1731356578015/work
