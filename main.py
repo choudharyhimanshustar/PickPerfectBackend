@@ -8,8 +8,25 @@ from uuid import uuid4
 from datetime import datetime
 from src.core.database import connect_to_mongo, close_mongo_connection
 from src.api.routes_videos import router as videos_router
+from uuid import uuid4
+from datetime import datetime
+from src.core.database import connect_to_mongo, close_mongo_connection
+from src.api.routes_videos import router as videos_router
 
 app = FastAPI()
+
+@app.on_event("startup")
+async def startup_event():
+    await connect_to_mongo()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await close_mongo_connection()
+
+app.include_router(videos_router, prefix="/videos", tags=["videos"])
+# load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env.development"))
+load_dotenv()
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -43,9 +60,11 @@ s3_client = boto3.client(
 
 
 
+
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
+
 
 
 
