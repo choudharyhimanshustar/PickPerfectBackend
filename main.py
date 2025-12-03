@@ -1,13 +1,28 @@
 from fastapi import FastAPI
 import boto3
-from botocore.exceptions import NoCredentialsError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
 from dotenv import load_dotenv
+from uuid import uuid4
+from datetime import datetime
+from src.core.database import connect_to_mongo, close_mongo_connection
+from src.api.routes_videos import router as videos_router
 
 app = FastAPI()
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env.development"))
+
+@app.on_event("startup")
+async def startup_event():
+    await connect_to_mongo()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await close_mongo_connection()
+
+app.include_router(videos_router, prefix="/videos", tags=["videos"])
+# load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env.development"))
+load_dotenv()
+
 bucket_name = os.getenv("AWS_S3_BUCKET")
 # Allow CORS (for frontend)
 app.add_middleware(
@@ -27,32 +42,12 @@ s3_client = boto3.client(
 )
 
 
+
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
 
-@app.get("/generate-presigned-url")
-def get_presigned_url(filename: str):
-    try:
-        
-        print("Loaded region name:", os.getenv("AWS_REGION"))
-        print("Loaded bucket name:", bucket_name)
-        
-        if not bucket_name:
-                raise ValueError("AWS_S3_BUCKET is not set in environment variables.")
 
-        presigned_url = s3_client.generate_presigned_url(
-                'put_object',
-                Params={
-                    'Bucket': bucket_name,
-                    'Key': filename,
-                    'ContentType': 'video/mp4'
-                },
-                ExpiresIn=3600
-    )
-        return {"url": presigned_url}
-    except NoCredentialsError:
-        raise HTTPException(status_code=500, detail="AWS credentials not found")
 
 @app.get("/all-videos")
 def get_all_videos():
@@ -84,3 +79,17 @@ def get_all_videos():
         })
 
     return {"videos": video_urls}
+
+@app.post("/webhook")
+async def webhook(data: dict):
+    print("Webhook received:", data)
+
+    # do DB update here:
+    # update video status from "uploading" to "uploaded"
+    
+    return {"received": True}
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
