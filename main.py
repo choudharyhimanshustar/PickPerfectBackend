@@ -24,6 +24,16 @@ async def startup_event():
 async def shutdown_event():
     await close_mongo_connection()
 
+# Allow CORS (for frontend)
+app.add_middleware(
+    CORSMiddleware,
+     allow_origins=[
+        "http://localhost:3000",
+    ],  # Replace with your frontend URL in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(videos_router, prefix="/videos", tags=["videos"])
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 # load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env.development"))
@@ -43,14 +53,6 @@ app.include_router(videos_router, prefix="/videos", tags=["videos"])
 load_dotenv()
 
 bucket_name = os.getenv("AWS_S3_BUCKET")
-# Allow CORS (for frontend)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Replace with your frontend URL in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Initialize S3 client
 s3_client = boto3.client(
