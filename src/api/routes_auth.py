@@ -1,12 +1,12 @@
 # routes/auth.py
-from fastapi import APIRouter, HTTPException, status, Response
+from fastapi import APIRouter, HTTPException, status, Response, Request
 from fastapi.responses import JSONResponse
 from src.database.schemas.auth import SignupRequest, LoginRequest
 from src.database.collections import get_users_collection
 from src.core.security import hash_password,verify_password
 from datetime import datetime
 import logging
-from src.database.schemas.auth import create_access_token, create_refresh_token
+from src.database.schemas.auth import create_access_token, create_refresh_token, decode_access_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -56,9 +56,9 @@ async def login(payload: LoginRequest):
         value=access_token,
         httponly=True,
         secure=False,
-        samesite="none",
+        samesite="lax",
         max_age=60 * 15,
-        path="/"
+        path="/",
     )
 
     res.set_cookie(
@@ -66,9 +66,48 @@ async def login(payload: LoginRequest):
         value=refresh_token,
         httponly=True,
         secure=False,
-        samesite="none",
+        samesite="lax",
         max_age=60 * 60 * 24 * 7,
-        path="/"
+        path="/",
     )
     logger.info("User logged in successfully",res)
     return res
+
+@router.get("/me")
+async def me(request: Request):
+    access_token = request.cookies.get("access_token")
+
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
+    payload = decode_access_token(access_token)
+
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+
+    return {
+        "authenticated": True,
+        "user_id": payload.get("sub"),
+        "email": payload.get("email"),
+    }
+    
+@router.post("/logout")
+async def logout(response: Response):
+    response.delete_cookie(
+        key="access_token",
+        path="/",
+    )
+    response.delete_cookie(
+        key="refresh_token",
+        path="/",
+    )
+
+    logger.info("User logged out successfully")
+
+    return {"success": True}
