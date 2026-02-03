@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI,Depends
 import boto3
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -13,6 +13,7 @@ from datetime import datetime
 from src.core.database import connect_to_mongo, close_mongo_connection
 from src.api.routes_videos import router as videos_router
 from src.api.routes_auth import router as auth_router
+from src.database.schemas.auth import get_current_user
 
 app = FastAPI()
 
@@ -73,7 +74,7 @@ async def root():
 
 
 @app.get("/all-videos")
-def get_all_videos():
+def get_all_videos(user_id: str = Depends(get_current_user)):
     # List everything in bucket root (no folders)
     response = s3_client.list_objects_v2(Bucket=bucket_name)
 
