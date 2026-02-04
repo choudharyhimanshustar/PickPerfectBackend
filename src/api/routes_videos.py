@@ -7,7 +7,8 @@ import boto3
 from botocore.exceptions import NoCredentialsError
 from pydantic import BaseModel
 from src.app_celery.tasks import process_music_video
-
+from src.database.schemas.auth import get_current_user
+from fastapi import Depends, HTTPException
 
 router = APIRouter()
 bucket_name = os.getenv("AWS_S3_BUCKET")
@@ -26,17 +27,18 @@ class S3UploadEvent(BaseModel):
     key: str
     
 @router.get("/generate-presigned-url")
-async def get_presigned_url(filename: str):
+async def get_presigned_url(filename: str,user_id: str = Depends(get_current_user)):
     try:
         
         print("Loaded region name:", os.getenv("AWS_REGION"))
         print("Loaded bucket name:", bucket_name)
         
         video_id = f"vid_{uuid4().hex}"
-        s3_key = f"videos/{video_id}.mp4"
+        s3_key = f"videos/{user_id}/{video_id}.mp4"
 
         metadata_doc = {
                 "_id": video_id,
+                "user_id": user_id,                 # 🔐 ownership
                 "original_filename": filename,
                 "s3_key": s3_key,
                 "status": "PENDING_UPLOAD",

@@ -14,6 +14,7 @@ from src.core.database import connect_to_mongo, close_mongo_connection
 from src.api.routes_videos import router as videos_router
 from src.api.routes_auth import router as auth_router
 from src.database.schemas.auth import get_current_user
+from src.core.database import mongodb
 
 app = FastAPI()
 
@@ -74,31 +75,27 @@ async def root():
 
 
 @app.get("/all-videos")
-def get_all_videos(user_id: str = Depends(get_current_user)):
-    # List everything in bucket root (no folders)
-    response = s3_client.list_objects_v2(Bucket=bucket_name)
-
-    if "Contents" not in response:
-        return {"videos": []}
+async def get_all_videos(user_id: str = Depends(get_current_user)):
+    
+    videos = await mongodb.db["videos"].find(
+        {"user_id": user_id}
+    ).to_list(length=None)
 
     video_urls = []
 
-    for obj in response["Contents"]:
-        key = obj["Key"]
-
-        # skip non-video files (optional)
-        if not key.lower().endswith((".mp4", ".mov", ".avi", ".webm", ".mkv")):
-            continue
-
-        # generate pre-signed URL
+    for video in videos:
         url = s3_client.generate_presigned_url(
-            ClientMethod="get_object",
-            Params={"Bucket": bucket_name, "Key": key},
+            "get_object",
+            Params={
+                "Bucket": bucket_name,
+                "Key": video["s3_key"]
+            },
             ExpiresIn=3600
         )
 
         video_urls.append({
-            "key": key,
+            "video_id": video["_id"],
+            "filename": video["original_filename"],
             "url": url
         })
 
