@@ -50,7 +50,6 @@ async def startup_event():
 async def shutdown_event():
     await close_mongo_connection()
 
-app.include_router(videos_router, prefix="/videos", tags=["videos"])
 # load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env.development"))
 load_dotenv()
 

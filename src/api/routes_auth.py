@@ -97,6 +97,39 @@ async def me(request: Request):
         "email": payload.get("email"),
     }
     
+@router.post("/refresh")
+async def refresh(request: Request):
+    refresh_token = request.cookies.get("refresh_token")
+
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No refresh token",
+        )
+
+    payload = decode_access_token(refresh_token)
+
+    if not payload or payload.get("type") != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    user_id = payload.get("sub")
+    new_access_token = create_access_token({"sub": user_id})
+
+    res = JSONResponse(content={"success": True})
+    res.set_cookie(
+        key="access_token",
+        value=new_access_token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=60 * 15,
+        path="/",
+    )
+    return res
+
 @router.post("/logout")
 async def logout(response: Response):
     response.delete_cookie(
