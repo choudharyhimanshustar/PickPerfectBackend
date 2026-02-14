@@ -69,6 +69,34 @@ async def get_presigned_url(filename: str,user_id: str = Depends(get_current_use
     except NoCredentialsError:
         raise HTTPException(status_code=500, detail="AWS credentials not found")
     
+@router.get("/{video_id}/analysis")
+async def get_video_analysis(video_id: str, user_id: str = Depends(get_current_user)):
+    video = await mongodb.db["videos"].find_one(
+        {"_id": video_id, "user_id": user_id}
+    )
+
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    if video.get("status") != "processed":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Analysis not ready. Current status: {video.get('status')}",
+        )
+
+    analysis = video.get("analysis")
+    if not analysis:
+        raise HTTPException(status_code=404, detail="No analysis data found for this video")
+
+    return {
+        "video_id": video_id,
+        "original_filename": video.get("original_filename"),
+        "status": video.get("status"),
+        "analyzed_at": video.get("analyzed_at"),
+        "analysis": analysis,
+    }
+
+
 @router.post("/webhook")
 async def video_upload_webhook(event: S3UploadEvent):
     print("Webhook received:", event)
