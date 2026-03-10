@@ -83,19 +83,35 @@ async def get_all_videos(user_id: str = Depends(get_current_user)):
     video_urls = []
 
     for video in videos:
-        url = s3_client.generate_presigned_url(
+
+        # generate video url
+        video_url = s3_client.generate_presigned_url(
             "get_object",
             Params={
                 "Bucket": bucket_name,
-                "Key": video["s3_key"]
+                "Key": video["video_s3_key"]
             },
             ExpiresIn=3600
         )
 
+        thumbnail_url = None
+
+        # generate thumbnail url if exists
+        if video.get("thumbnail_s3_key"):
+            thumbnail_url = s3_client.generate_presigned_url(
+                "get_object",
+                Params={
+                    "Bucket": bucket_name,
+                    "Key": video["thumbnail_s3_key"]
+                },
+                ExpiresIn=3600
+            )
+
         video_urls.append({
             "video_id": video["_id"],
             "filename": video["original_filename"],
-            "url": url
+            "video_url": video_url,
+            "thumbnail_url": thumbnail_url
         })
 
     return {"videos": video_urls}
