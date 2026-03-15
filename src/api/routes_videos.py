@@ -104,9 +104,9 @@ async def generate_presigned_url(
         return response
 
     except NoCredentialsError:
-        raise HTTPException(status_code=500, detail="AWS credentials not found")@router.get("/{video_id}/analysis")
+        raise HTTPException(status_code=500, detail="AWS credentials not found")
     
-    
+@router.get("/{video_id}/analysis")    
 async def get_video_analysis(video_id: str, user_id: str = Depends(get_current_user)):
     video = await mongodb.db["videos"].find_one(
         {"_id": video_id, "user_id": user_id}
@@ -155,78 +155,83 @@ async def video_upload_complete(
     payload: dict,
     user_id: str = Depends(get_current_user)
 ):
-    video_id = payload.get("video_id")
-
-    if not video_id:
-        raise HTTPException(status_code=400, detail="video_id required")
-
-    video = await mongodb.db["videos"].find_one({
-        "video_s3_key": video_id,
-        "user_id": user_id
-    })
-
-    if not video:
-        raise HTTPException(status_code=404, detail="Video not found")
-
-    # If thumbnail already uploaded, skip generation
-    if video.get("thumbnail_s3_key"):
-        return {"message": "Thumbnail already exists"}
-
-    video_key = video["video_s3_key"]
-    video_filename = os.path.basename(video_key)
-    video_name = os.path.splitext(video_filename)[0]
-
-    video_local = f"/tmp/{video_filename}"
-    thumb_local = f"/tmp/{video_name}.png"
-
-
     try:
+        print("VIDEO UPLOAD COMPLETE HIT")
+        video_id = payload.get("video_id")
 
-        # 1️⃣ download video from S3
-        s3_client.download_file(bucket_name, video_key, video_local)
+        if not video_id:
+            raise HTTPException(status_code=400, detail="video_id required")
 
-        # 2️⃣ generate thumbnail using ffmpeg
-        subprocess.run([
-            "ffmpeg",
-            "-ss", "00:00:01",
-            "-i", video_local,
-            "-frames:v", "1",
-            "-update", "1",
-            "-q:v", "2",
-            thumb_local
-        ], check=True)
+        video = await mongodb.db["videos"].find_one({
+            "video_s3_key": video_id,
+            "user_id": user_id
+        })
 
-        # 3️⃣ upload thumbnail to S3
-        thumbnail_key = video_key.replace("videos/", "thumbnails/").replace(".mp4", ".png")
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
 
-        s3_client.upload_file(
-            thumb_local,
-            bucket_name,
-            thumbnail_key,
-            ExtraArgs={"ContentType": "image/png"}
-        )
+        # If thumbnail already uploaded, skip generation
+        if video.get("thumbnail_s3_key"):
+            return {"message": "Thumbnail already exists"}
 
-        # 4️⃣ update DB
-        await mongodb.db["videos"].update_one(
-            {"video_s3_key": video_key},
-            {
-                "$set": {
-                    "thumbnail_s3_key": thumbnail_key,
-                    "updated_at": datetime.utcnow(),
-                    "status": "READY"
+        video_key = video["video_s3_key"]
+        video_filename = os.path.basename(video_key)
+        video_name = os.path.splitext(video_filename)[0]
+
+        video_local = f"/tmp/{video_filename}"
+        thumb_local = f"/tmp/{video_name}.png"
+
+
+        try:
+
+            # 1️⃣ download video from S3
+            s3_client.download_file(bucket_name, video_key, video_local)
+
+            # 2️⃣ generate thumbnail using ffmpeg
+            subprocess.run([
+                "ffmpeg",
+                "-ss", "00:00:01",
+                "-i", video_local,
+                "-frames:v", "1",
+                "-update", "1",
+                "-q:v", "2",
+                thumb_local
+            ], check=True)
+
+            # 3️⃣ upload thumbnail to S3
+            thumbnail_key = video_key.replace("videos/", "thumbnails/").replace(".mp4", ".png")
+
+            s3_client.upload_file(
+                thumb_local,
+                bucket_name,
+                thumbnail_key,
+                ExtraArgs={"ContentType": "image/png"}
+            )
+
+            # 4️⃣ update DB
+            await mongodb.db["videos"].update_one(
+                {"video_s3_key": video_key},
+                {
+                    "$set": {
+                        "thumbnail_s3_key": thumbnail_key,
+                        "updated_at": datetime.utcnow(),
+                        "status": "READY"
+                    }
                 }
+            )
+
+            return {
+                "message": "Thumbnail generated successfully",
+                "thumbnail_key": thumbnail_key
             }
-        )
 
-        return {
-            "message": "Thumbnail generated successfully",
-            "thumbnail_key": thumbnail_key
-        }
+        finally:
+            # cleanup temp files
+            if os.path.exists(video_local):
+                os.remove(video_local)
 
-    finally:
-        # cleanup temp files
-        if os.path.exists(video_local):
-            os.remove(video_local)
-
-        if os.path.exists(thumb_local):
-            os.remove(thumb_local)
+            if os.path.exists(thumb_local):
+                os.remove(thumb_local)
+    except Exception as e:
+        print("ERROR:", str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

@@ -354,17 +354,17 @@ def save_analysis_result(s3_key, chord_result, rhythm_result, performance_score)
     }
 
     result = mongodb_sync.db["videos"].update_one(
-        {"s3_key": s3_key},
+        {"video_s3_key": s3_key},
         {"$set": update_payload}
     )
 
     if result.matched_count == 0:
-        logger.warning(f"No video found for s3_key={s3_key}")
+        logger.warning(f"No video found for video_s3_key={s3_key}")
     else:
-        logger.info(f"Analysis saved for s3_key={s3_key}")
+        logger.info(f"Analysis saved for video_s3_key={s3_key}")
 
 def update_video_status(
-    s3_key: str,
+    video_s3_key: str,
     status: str
 ):
     """
@@ -379,7 +379,7 @@ def update_video_status(
 
     try:
         result = mongodb_sync.db["videos"].update_one(
-            {"s3_key": s3_key},
+            {"video_s3_key": video_s3_key},
             {
                 "$set": {
                     "status": status,
@@ -389,14 +389,14 @@ def update_video_status(
         )
 
         if result.matched_count == 0:
-            logger.warning(f"No video found for s3_key={s3_key}")
+            logger.warning(f"No video found for video_s3_key={video_s3_key}")
         else:
             logger.info(
-                f"Video status updated | s3_key={s3_key} | status={status}"
+                f"Video status updated | video_s3_key={video_s3_key} | status={status}"
             )
 
     except Exception:
         logger.exception(
-            f"Failed to update video status for s3_key={s3_key}"
+            f"Failed to update video status for video_s3_key={video_s3_key}"
         )
         raise

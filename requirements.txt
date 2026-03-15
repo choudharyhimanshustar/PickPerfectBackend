@@ -1,6 +1,6 @@
 pip>=23.3
-setuptools>=68.0
-wheel>=0.41
+setuptools==70.0.0
+wheel==0.41.0
 bcrypt==4.1.2
 passlib[bcrypt]==1.7.4
 boto3==1.40.59
