@@ -15,6 +15,7 @@ from src.api.routes_videos import router as videos_router
 from src.api.routes_auth import router as auth_router
 from src.database.schemas.auth import get_current_user
 from src.core.database import mongodb
+from src.utils.video_helpers import get_presigned_download_url, serialize_video
 
 app = FastAPI()
 
@@ -75,46 +76,14 @@ async def root():
 
 @app.get("/all-videos")
 async def get_all_videos(user_id: str = Depends(get_current_user)):
-    
+
     videos = await mongodb.db["videos"].find(
         {"user_id": user_id}
     ).to_list(length=None)
 
-    video_urls = []
+    video_list = [serialize_video(video, s3_client, bucket_name) for video in videos]
 
-    for video in videos:
-
-        # generate video url
-        video_url = s3_client.generate_presigned_url(
-            "get_object",
-            Params={
-                "Bucket": bucket_name,
-                "Key": video["video_s3_key"]
-            },
-            ExpiresIn=3600
-        )
-
-        thumbnail_url = None
-
-        # generate thumbnail url if exists
-        if video.get("thumbnail_s3_key"):
-            thumbnail_url = s3_client.generate_presigned_url(
-                "get_object",
-                Params={
-                    "Bucket": bucket_name,
-                    "Key": video["thumbnail_s3_key"]
-                },
-                ExpiresIn=3600
-            )
-
-        video_urls.append({
-            "video_id": video["_id"],
-            "filename": video["original_filename"],
-            "video_url": video_url,
-            "thumbnail_url": thumbnail_url
-        })
-
-    return {"videos": video_urls}
+    return {"videos": video_list}
 
 @app.post("/webhook")
 async def webhook(data: dict):

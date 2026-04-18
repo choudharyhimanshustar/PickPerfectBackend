@@ -40,7 +40,7 @@ def decode_access_token(token: str):
     except JWTError:
         return None
     
-def get_current_user(request: Request):
+async def get_current_user(request: Request):
     token = request.cookies.get("access_token")
     
     if not token:

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, logger
+from fastapi import APIRouter, logger,Query
 from src.core.database import mongodb
 from uuid import uuid4
 import os
@@ -11,6 +11,11 @@ from src.database.schemas.auth import get_current_user
 from fastapi import Depends, HTTPException
 import mimetypes
 import subprocess
+from typing import List
+import asyncio
+import json 
+from sse_starlette.sse import EventSourceResponse
+from src.utils.video_helpers import get_presigned_download_url
 
 router = APIRouter()
 bucket_name = os.getenv("AWS_S3_BUCKET")
@@ -106,6 +111,63 @@ async def generate_presigned_url(
     except NoCredentialsError:
         raise HTTPException(status_code=500, detail="AWS credentials not found")
     
+ 
+@router.get("/thumbnails/progress")
+async def thumbnail_progress(
+    video_ids: List[str] = Query(...),  # frontend sends only the "processing" ones
+    user_id: str = Depends(get_current_user),
+):
+    async def event_stream():
+        pending_ids = set(video_ids)
+        
+        # ✅ ADD PING HERE — before the while loop, before any sleep
+        yield {"event": "ping", "data": json.dumps({"message": "stream connected"})}
+        try:
+            while pending_ids:
+                await asyncio.sleep(3)  # server-side check every 3 seconds
+
+                # Single DB query for all still-pending videos
+                newly_ready = await mongodb.db["videos"].find({
+                    "_id": {"$in": list(pending_ids)},
+                    "user_id": user_id,                          # security: scoped to user
+                    "thumbnail_s3_key": {"$exists": True, "$ne": None}
+                }).to_list(length=None)
+
+                print(f"Checked thumbnail status for {len(pending_ids)} videos, {len(newly_ready)} newly ready")
+                for video in newly_ready:
+                    vid_id = str(video["_id"])
+                    thumbnail_url = get_presigned_download_url(
+                        s3_client, bucket_name, video["thumbnail_s3_key"]
+                    )
+
+                    yield {
+                        "event": "thumbnail_ready",
+                        "data": json.dumps({
+                            "video_id": vid_id,
+                            "thumbnail_url": thumbnail_url,
+                            "thumbnail_status": "ready"
+                        })
+                    }
+
+                    pending_ids.remove(vid_id)  # drop from pending, shrinks every cycle
+
+            # All thumbnails are ready, signal the frontend to close the connection
+            yield {"event": "done", "data": json.dumps({"message": "all thumbnails ready"})}
+
+        except Exception as e:
+            print(f"ERROR in event_stream loop: {e!r}")
+            raise HTTPException(status_code=500, detail="Internal server error in thumbnail progress stream")
+
+    return EventSourceResponse(
+        event_stream(),
+        headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",          # ← kills nginx/proxy buffering
+        "Access-Control-Allow-Origin": "http://localhost:3000",
+        "Access-Control-Allow-Credentials": "true",
+        }
+    )
+
 @router.get("/{video_id}/analysis")    
 async def get_video_analysis(video_id: str, user_id: str = Depends(get_current_user)):
     video = await mongodb.db["videos"].find_one(
@@ -133,4 +195,4 @@ async def get_video_analysis(video_id: str, user_id: str = Depends(get_current_u
         "analysis": analysis,
     }
 
-    
+   
