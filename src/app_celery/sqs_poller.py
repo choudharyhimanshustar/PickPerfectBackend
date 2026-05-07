@@ -35,7 +35,8 @@ def poll_queue():
 
                 video_data = {
                     "video_s3_key": s3_key,
-                    "user_id": body["data"]["user_id"]  # ensure SQS has this
+                    "user_id": body["data"]["user_id"] ,
+                    "receipt_handle": msg["ReceiptHandle"]
                 }
 
                 # 🔥 THIS IS THE CHANGE (CHAIN)
@@ -44,11 +45,7 @@ def poll_queue():
                     process_music_video.s()
                 ).apply_async()
 
-                # ✅ delete after success
-                sqs.delete_message(
-                    QueueUrl=QUEUE_URL,
-                    ReceiptHandle=msg["ReceiptHandle"]
-                )
+
 
             except Exception as e:
                 print("Error processing message:", str(e))

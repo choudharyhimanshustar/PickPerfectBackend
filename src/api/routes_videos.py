@@ -6,7 +6,6 @@ from datetime import datetime
 import boto3
 from botocore.exceptions import NoCredentialsError
 from pydantic import BaseModel
-from src.app_celery.tasks import process_music_video
 from src.database.schemas.auth import get_current_user
 from fastapi import Depends, HTTPException
 import mimetypes
@@ -16,10 +15,15 @@ import asyncio
 import json 
 from sse_starlette.sse import EventSourceResponse
 from src.utils.video_helpers import get_presigned_download_url
+from src.database.schemas.metadata import get_video
+from src.database.schemas.metadata import VideoStatus
+import logging
+from src.app_celery.tasks import  generate_thumbnail_task
 
 router = APIRouter()
 bucket_name = os.getenv("AWS_S3_BUCKET")
 
+logger = logging.getLogger(__name__)
 # Initialize S3 client
 s3_client = boto3.client(
     "s3",
@@ -62,6 +66,7 @@ async def generate_presigned_url(
             "original_filename": video_name,
             "video_s3_key": video_s3_key,
             "thumbnail_s3_key": thumbnail_s3_key,
+            "thumbnail_requested_at": datetime.utcnow(), 
             "status": "PENDING_UPLOAD",
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
@@ -112,87 +117,119 @@ async def generate_presigned_url(
         raise HTTPException(status_code=500, detail="AWS credentials not found")
     
  
+@router.get("/{video_id}/analysis")    
+async def get_video_analysis(video_id: str, user_id: str = Depends(get_current_user)):
+    video = await get_video(video_id, user_id)
+
+    if video.status != "processed":
+        raise HTTPException(400, detail=f"Analysis not ready. Current status: {video.status}")
+
+    return {
+        "video_id": video.id,
+        "original_filename": video.original_filename,
+        "status": video.status,
+        "analyzed_at": video.analyzed_at,
+        "analysis": video.analysis,
+    }
+
+   
 @router.get("/thumbnails/progress")
 async def thumbnail_progress(
-    video_ids: List[str] = Query(...),  # frontend sends only the "processing" ones
+    video_ids: List[str] = Query(...),
     user_id: str = Depends(get_current_user),
 ):
     async def event_stream():
         pending_ids = set(video_ids)
-        
-        # ✅ ADD PING HERE — before the while loop, before any sleep
+
         yield {"event": "ping", "data": json.dumps({"message": "stream connected"})}
+
         try:
             while pending_ids:
-                await asyncio.sleep(3)  # server-side check every 3 seconds
+                await asyncio.sleep(3)
 
-                # Single DB query for all still-pending videos
-                newly_ready = await mongodb.db["videos"].find({
+                videos = await mongodb.db["videos"].find({
                     "_id": {"$in": list(pending_ids)},
-                    "user_id": user_id,                          # security: scoped to user
+                    "user_id": user_id,
                     "thumbnail_s3_key": {"$exists": True, "$ne": None}
                 }).to_list(length=None)
 
-                print(f"Checked thumbnail status for {len(pending_ids)} videos, {len(newly_ready)} newly ready")
-                for video in newly_ready:
+                for video in videos:
                     vid_id = str(video["_id"])
-                    thumbnail_url = get_presigned_download_url(
-                        s3_client, bucket_name, video["thumbnail_s3_key"]
-                    )
+                    status = video["status"]
+                    print(f"Checking video {vid_id}: status={status}")
+                    if status == VideoStatus.failed:
+                        # emit failed event — frontend shows retry button
+                        yield {
+                            "event": "thumbnail_failed",
+                            "data": json.dumps({
+                                "video_id": vid_id,
+                                "thumbnail_status": "failed",
+                            })
+                        }
 
-                    yield {
-                        "event": "thumbnail_ready",
-                        "data": json.dumps({
-                            "video_id": vid_id,
-                            "thumbnail_url": thumbnail_url,
-                            "thumbnail_status": "ready"
-                        })
-                    }
+                    elif status == VideoStatus.ready and video.get("thumbnail_s3_key"):
+                        thumbnail_url = get_presigned_download_url(
+                            s3_client, bucket_name, video["thumbnail_s3_key"]
+                        )
+                        print(f"Thumbnail ready for video {vid_id}, emitting event with URL: {thumbnail_url}")
+                        # logger.info(f"Thumbnail ready for video {vid_id}, emitting event with URL: {thumbnail_url}")
+                        yield {
+                            "event": "thumbnail_ready",
+                            "data": json.dumps({
+                                "video_id": vid_id,
+                                "thumbnail_url": thumbnail_url,
+                                "thumbnail_status": "ready",
+                            })
+                        }
 
-                    pending_ids.remove(vid_id)  # drop from pending, shrinks every cycle
+                    pending_ids.remove(vid_id)  # remove regardless — ready or failed
 
-            # All thumbnails are ready, signal the frontend to close the connection
-            yield {"event": "done", "data": json.dumps({"message": "all thumbnails ready"})}
+                print(f"[SSE] {len(pending_ids)} videos still pending")
+
+            yield {"event": "done", "data": json.dumps({"message": "all videos settled"})}
 
         except Exception as e:
-            print(f"ERROR in event_stream loop: {e!r}")
-            raise HTTPException(status_code=500, detail="Internal server error in thumbnail progress stream")
+            print(f"ERROR in event_stream: {e!r}")
+            yield {"event": "error", "data": json.dumps({"message": "stream error"})}
 
     return EventSourceResponse(
         event_stream(),
         headers={
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",          # ← kills nginx/proxy buffering
-        "Access-Control-Allow-Origin": "http://localhost:3000",
-        "Access-Control-Allow-Credentials": "true",
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "http://localhost:3000",
+            "Access-Control-Allow-Credentials": "true",
         }
     )
+    
+@router.post("/{video_id}/retry-thumbnail")
+async def retry_thumbnail(
+    video_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    video = await get_video(video_id, user_id)
 
-@router.get("/{video_id}/analysis")    
-async def get_video_analysis(video_id: str, user_id: str = Depends(get_current_user)):
-    video = await mongodb.db["videos"].find_one(
-        {"_id": video_id, "user_id": user_id}
-    )
-
-    if not video:
-        raise HTTPException(status_code=404, detail="Video not found")
-
-    if video.get("status") != "processed":
+    if video.status != VideoStatus.failed:
         raise HTTPException(
             status_code=400,
-            detail=f"Analysis not ready. Current status: {video.get('status')}",
+            detail=f"Only failed videos can be retried. Current status: {video.status}"
         )
 
-    analysis = video.get("analysis")
-    if not analysis:
-        raise HTTPException(status_code=404, detail="No analysis data found for this video")
+    now = datetime.utcnow()
 
-    return {
-        "video_id": video_id,
-        "original_filename": video.get("original_filename"),
-        "status": video.get("status"),
-        "analyzed_at": video.get("analyzed_at"),
-        "analysis": analysis,
-    }
+    await mongodb.db["videos"].update_one(
+        {"_id": video_id},
+        {"$set": {
+            "status": VideoStatus.pending,
+            "thumbnail_requested_at": now,   # ← resets the 15min clock
+            "updated_at": now,
+        }}
+    )
 
-   
+    # re-enqueue celery task
+    generate_thumbnail_task.delay({
+        "video_s3_key": video.video_s3_key,
+        "user_id": user_id,
+    })
+
+    return {"video_id": video_id, "status": VideoStatus.pending}

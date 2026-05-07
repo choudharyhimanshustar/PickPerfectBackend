@@ -19,11 +19,19 @@ def serialize_video(video: dict, s3_client, bucket_name: str) -> dict:
         if has_thumbnail
         else None
     )
+    
+
+    if has_thumbnail:
+        thumbnail_status = "ready"
+    elif video.get("status") == "failed":
+        thumbnail_status = "failed"
+    else:
+        thumbnail_status = "processing"
 
     return {
         "video_id": str(video["_id"]),
         "filename": video["original_filename"],
         "video_url": video_url,
         "thumbnail_url": thumbnail_url,
-        "thumbnail_status": "ready" if has_thumbnail else "processing",
+        "thumbnail_status": thumbnail_status,
     }
