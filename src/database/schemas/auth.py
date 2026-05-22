@@ -1,9 +1,11 @@
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime, timedelta
 from jose import jwt,JWTError
-from fastapi import Depends, HTTPException, status, Request
+from fastapi import Depends, HTTPException, logger, status, Request, WebSocket
 from fastapi.security import OAuth2PasswordBearer
+import logging
 
+logger = logging.getLogger(__name__)
 SECRET_KEY = "super-secret-key"
 ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -66,3 +68,33 @@ async def get_current_user(request: Request):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
+        
+async def get_current_user_ws(websocket: WebSocket) -> str | None:
+    """
+    WebSocket-compatible version of get_current_user.
+    Reads access_token from cookies in the WS handshake.
+    Returns user_id on success, or closes the socket and returns None on failure.
+    """
+    logger.info("WS cookies: %s", dict(websocket.cookies))
+    logger.info("WS headers: %s", dict(websocket.headers))
+    token = websocket.cookies.get("access_token")
+    logger.info("Token found: %s", bool(token))
+    if not token:
+        await websocket.close(code=4001)  # 4001 = unauthorized
+        return None
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "access":
+            await websocket.close(code=4001)
+            return None
+
+        user_id = payload.get("sub")
+        if not user_id:
+            await websocket.close(code=4001)
+            return None
+
+        return user_id
+    except JWTError:
+        await websocket.close(code=4001)
+        return None

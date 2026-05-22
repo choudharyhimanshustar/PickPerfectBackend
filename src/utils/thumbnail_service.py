@@ -1,11 +1,19 @@
 import os
 import subprocess
+import logging
 
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 def generate_thumbnail_service(video, bucket_name, s3_client, mongodb):
     video_key = video["video_s3_key"]
+    logger.info(f"Generating thumbnail for video: {video_key}")
     video_filename = os.path.basename(video_key)
+    logger.info(f"Extracted video filename: {video_filename}")
     video_name = os.path.splitext(video_filename)[0]
-
+    logger.info(f"Video name without extension: {video_name}")
     video_local = f"/tmp/{video_filename}"
     thumb_local = f"/tmp/{video_name}.png"
 
@@ -49,7 +57,9 @@ def generate_thumbnail_service(video, bucket_name, s3_client, mongodb):
             "video": video,
             "thumbnail_s3_key": thumbnail_key
         }
-
+    except Exception as e:
+        logger.error(f"Error in thumbnail generation: {str(e)}")
+        raise e
     finally:
         if os.path.exists(video_local):
             os.remove(video_local)

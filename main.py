@@ -16,16 +16,30 @@ from src.api.routes_auth import router as auth_router
 from src.database.schemas.auth import get_current_user
 from src.core.database import mongodb
 from src.utils.video_helpers import get_presigned_download_url, serialize_video
+import asyncio
+from contextlib import asynccontextmanager
+from src.api.redis_subscriber import redis_subscriber
+import logging
 
-app = FastAPI()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+load_dotenv()
 
-@app.on_event("startup")
-async def startup_event():
-    await connect_to_mongo()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup
+    await connect_to_mongo()                         
+    task = asyncio.create_task(redis_subscriber())
+    yield
+    # shutdown
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    await close_mongo_connection()                    
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    await close_mongo_connection()
+app = FastAPI(lifespan=lifespan)
 
 # Allow CORS (for frontend)
 app.add_middleware(
@@ -37,22 +51,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    logger.info(">>> %s %s | Origin: %s", request.method, request.url.path, request.headers.get("origin"))
+    response = await call_next(request)
+    logger.info("<<< %s", response.status_code)
+    return response
+
 app.include_router(videos_router, prefix="/videos", tags=["videos"])
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 # load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env.development"))
-load_dotenv()
-
-
-@app.on_event("startup")
-async def startup_event():
-    await connect_to_mongo()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await close_mongo_connection()
-
-# load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env.development"))
-load_dotenv()
 
 bucket_name = os.getenv("AWS_S3_BUCKET")
 

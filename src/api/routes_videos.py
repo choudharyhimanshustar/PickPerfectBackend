@@ -19,9 +19,15 @@ from src.database.schemas.metadata import get_video
 from src.database.schemas.metadata import VideoStatus
 import logging
 from src.app_celery.tasks import  generate_thumbnail_task
+from fastapi import WebSocket, WebSocketDisconnect
+from src.database.schemas.auth import get_current_user_ws
+from src.api.websocket_manager import manager
+import redis.asyncio as aioredis
 
 router = APIRouter()
 bucket_name = os.getenv("AWS_S3_BUCKET")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+ALLOWED_ORIGINS = ["http://localhost:3000"]
 
 logger = logging.getLogger(__name__)
 # Initialize S3 client
@@ -233,3 +239,53 @@ async def retry_thumbnail(
     })
 
     return {"video_id": video_id, "status": VideoStatus.pending}
+
+
+
+@router.websocket("/ws/progress/{video_id}")
+async def video_progress_ws(websocket: WebSocket, video_id: str):
+    origin = websocket.headers.get("origin")
+    logger.info("WebSocket connection attempt for video %s | Origin: %s", video_id, origin)
+    if origin not in ALLOWED_ORIGINS:
+        await websocket.close(code=4003)
+        return
+    # 1. Authenticate
+    user_id = await get_current_user_ws(websocket)
+    if user_id is None:
+        return
+
+    # 2. Authorize
+    video = await mongodb.db["videos"].find_one(
+        {"_id": video_id, "user_id": user_id}
+    )
+    if not video:
+        await websocket.close(code=4003)
+        return
+
+    # 3. Accept + register
+    await websocket.accept()
+    await manager.connect(websocket, video_id)
+
+    try:
+        # Keep receiving messages in a loop
+        while True:
+            text = await websocket.receive_text()
+
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                continue  # ignore malformed messages
+
+            # Handle heartbeat ping from frontend
+            if data.get("type") == "__ping__":
+                await websocket.send_json({"type": "__pong__"})
+
+            # Ignore anything else — frontend doesn't send other messages
+    except WebSocketDisconnect:
+        logger.info("Client disconnected from video %s", video_id)
+    finally:
+        manager.disconnect(websocket, video_id)
+        try:
+            await websocket.close()
+        except Exception:
+            pass

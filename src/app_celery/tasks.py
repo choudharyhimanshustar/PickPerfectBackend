@@ -9,6 +9,7 @@ from botocore.exceptions import NoCredentialsError
 import os 
 from datetime import datetime, timezone, timedelta
 import json
+from src.utils.ws_progress import publish_progress
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -54,46 +55,6 @@ def _extract_video_id_from_body(body: dict) -> str | None:
     except (KeyError, IndexError):
         return None
     
-@celery_app.task(name="process_music_video")
-def process_music_video(video_data: dict):
-    # 🔥 GUARANTEED DB INIT
-    mongodb_sync.connect()
-    s3_key = video_data["video_s3_key"]
-    video_path = download_video_from_s3(s3_key)
-    logger.info("Downloaded video to:", video_path)
-    
-    audio_path = extract_audio_from_video(video_path)
-    logger.info("Extracted audio to:", audio_path)
-    
-    features = analyze_audio_features(audio_path)
-    logger.info("Analyzed audio features.", features)
-    logger.info("Feature keys: %s", list(features.keys()))
-    logger.info("Feature summary: %s", {k: type(v) for k, v in features.items()})
-
-    chord_result = detect_chords(features)
-    logger.info(f"Detected chords. Result: {chord_result}")
-    
-    rhythm_result = detect_rhythm(features)
-    logger.info(f"Detected rhythm. Result: {rhythm_result}")
-    
-    performance_score = evaluate_performance(
-        chord_result,
-        rhythm_result
-    )
-    logger.info(f"Evaluated performance. Score: {performance_score}")
-    
-    save_analysis_result(
-        s3_key,
-        chord_result,
-        rhythm_result,
-        performance_score
-    )
-
-    update_video_status(s3_key, "processed")
-    logger.info(f"Updated video status to 'processed' for {s3_key}")
-    
-    return {"s3_key": s3_key, "status": "completed"}
-
 @celery_app.task(name="retry_failed_task", bind=True, max_retries=3, default_retry_delay=60)
 def generate_thumbnail_task(self, video_data):
     """
@@ -255,3 +216,67 @@ def _delete_from_dlq(sqs_client, receipt_handle: str, msg_id: str = None):
         # Receipt handles expire after the visibility timeout — log and move on.
         # The message will reappear in DLQ and be processed next cycle.
         logger.error("Failed to delete DLQ message %s: %s", msg_id, e)
+        
+@celery_app.task(name="process_music_video")
+def process_music_video(video_data: dict):
+    # 🔥 GUARANTEED DB INIT
+    mongodb_sync.connect()
+    s3_key = video_data["video_s3_key"]
+
+    # Extract video_id from s3_key for the WS channel
+    # Format: videos/{user_id}/{video_id}.{ext}
+    try:
+        filename = s3_key.split("/")[-1]
+        video_id = filename.rsplit(".", 1)[0]
+    except Exception:
+        video_id = ""
+
+    try:
+        publish_progress(video_id, "video_received", "Video received, starting pipeline...", 5)
+
+        publish_progress(video_id, "downloading", "Downloading video from S3...", 15)
+        video_path = download_video_from_s3(s3_key)
+        logger.info("Downloaded video to: %s", video_path)
+
+        publish_progress(video_id, "extracting_audio", "Extracting audio track...", 30)
+        audio_path = extract_audio_from_video(video_path)
+        logger.info("Extracted audio to: %s", audio_path)
+
+        publish_progress(video_id, "analyzing_features", "Analyzing audio features...", 45)
+        features = analyze_audio_features(audio_path)
+        logger.info("Analyzed audio features.")
+        logger.info("Feature keys: %s", list(features.keys()))
+
+        publish_progress(video_id, "detecting_chords", "Detecting chords...", 60)
+        chord_result = detect_chords(features)
+        logger.info("Detected chords. Result: %s", chord_result)
+
+        publish_progress(video_id, "detecting_rhythm", "Detecting rhythm...", 70)
+        rhythm_result = detect_rhythm(features)
+        logger.info("Detected rhythm. Result: %s", rhythm_result)
+
+        publish_progress(video_id, "evaluating", "Evaluating performance...", 80)
+        performance_score = evaluate_performance(chord_result, rhythm_result)
+        logger.info("Evaluated performance. Score: %s", performance_score)
+
+        publish_progress(video_id, "saving_results", "Saving analysis results...", 90)
+        save_analysis_result(s3_key, chord_result, rhythm_result, performance_score)
+
+        update_video_status(s3_key, "processed")
+        logger.info("Updated video status to 'processed' for %s", s3_key)
+
+        publish_progress(video_id, "completed", "Processing complete!", 100, event_type="completed")
+
+        return {"s3_key": s3_key, "status": "completed"}
+
+    except Exception as e:
+        logger.exception("process_music_video failed for %s", s3_key)
+        publish_progress(
+            video_id,
+            "failed",
+            "Processing failed",
+            0,
+            event_type="failed",
+            error=str(e),
+        )
+        raise  # Re-raise so Celery retry / DLQ logic still applies
