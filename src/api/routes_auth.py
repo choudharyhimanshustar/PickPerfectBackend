@@ -1,12 +1,13 @@
 # routes/auth.py
-from fastapi import APIRouter, HTTPException, status, Response, Request
+from fastapi import APIRouter, HTTPException, status, Response, Request, Depends
 from fastapi.responses import JSONResponse
 from src.database.schemas.auth import SignupRequest, LoginRequest
 from src.database.collections import get_users_collection
 from src.core.security import hash_password,verify_password
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
-from src.database.schemas.auth import create_access_token, create_refresh_token, decode_access_token
+from src.database.schemas.auth import create_access_token, create_refresh_token, decode_access_token, get_current_user
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -144,3 +145,11 @@ async def logout(response: Response):
     logger.info("User logged out successfully")
 
     return {"success": True}
+
+@router.get("/ws-token")
+async def get_ws_token(user_id: str = Depends(get_current_user)):
+    token = create_access_token(
+        data={"sub": user_id, "type": "access"},
+        expires_minutes=1
+    )
+    return {"token": token}

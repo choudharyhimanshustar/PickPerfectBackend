@@ -28,6 +28,9 @@ router = APIRouter()
 bucket_name = os.getenv("AWS_S3_BUCKET")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 ALLOWED_ORIGINS = ["http://localhost:3000"]
+MAX_MESSAGE_BYTES = 256        # ping is only 19 bytes, 256 is generous
+MAX_MESSAGES_PER_MINUTE = 60  # one per second on average is plenty
+ALLOWED_MESSAGE_TYPES = {"__ping__"}
 
 logger = logging.getLogger(__name__)
 # Initialize S3 client
@@ -253,7 +256,7 @@ async def video_progress_ws(websocket: WebSocket, video_id: str):
     user_id = await get_current_user_ws(websocket)
     if user_id is None:
         return
-
+    
     # 2. Authorize
     video = await mongodb.db["videos"].find_one(
         {"_id": video_id, "user_id": user_id}
@@ -265,16 +268,74 @@ async def video_progress_ws(websocket: WebSocket, video_id: str):
     # 3. Accept + register
     await websocket.accept()
     await manager.connect(websocket, video_id)
+    
+    # Rate limiting state — per connection, resets every minute
+    message_count = 0
+    window_start = asyncio.get_event_loop().time()
+
 
     try:
         # Keep receiving messages in a loop
         while True:
             text = await websocket.receive_text()
 
+            if len(text.encode("utf-8")) > MAX_MESSAGE_BYTES:
+                logger.warning(
+                    "Oversized message from user %s on video %s (%d bytes) — closing",
+                    user_id, video_id, len(text.encode("utf-8"))
+                )
+                await websocket.close(code=1008)  # 1008 = policy violation
+                return
+            
+            now = asyncio.get_event_loop().time()
+            if now - window_start > 60:
+                # reset window every 60 seconds
+                message_count = 0
+                window_start = now
+            message_count += 1
+            if message_count > MAX_MESSAGES_PER_MINUTE:
+                logger.warning(
+                    "Rate limit exceeded by user %s on video %s — closing",
+                    user_id, video_id
+                )
+                await websocket.close(code=1008)
+                return
+            
             try:
                 data = json.loads(text)
             except json.JSONDecodeError:
-                continue  # ignore malformed messages
+                logger.warning(
+                    "Malformed JSON from user %s on video %s — closing",
+                    user_id, video_id
+                )
+                await websocket.close(code=1008)
+                return
+            
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "Malformed JSON from user %s on video %s — closing",
+                    user_id, video_id
+                )
+                await websocket.close(code=1008)
+                return
+            
+            if not isinstance(data, dict) or "type" not in data or not isinstance(data["type"], str):
+                logger.warning(
+                    "Invalid message structure from user %s on video %s — closing",
+                    user_id, video_id
+                )
+                await websocket.close(code=1008)
+                return
+
+            if data["type"] not in ALLOWED_MESSAGE_TYPES:
+                logger.warning(
+                    "Unknown message type '%s' from user %s on video %s — closing",
+                    data["type"], user_id, video_id
+                )
+                await websocket.close(code=1008)
+                return
 
             # Handle heartbeat ping from frontend
             if data.get("type") == "__ping__":

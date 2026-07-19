@@ -17,6 +17,29 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
     
+def _decode_token(token: str) -> str:
+    """
+    Validates a JWT and returns user_id.
+    Raises HTTPException on any failure.
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        return user_id
+
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+        
 def create_access_token(data: dict, expires_minutes: int = 15):
     to_encode = data.copy()
     to_encode.update({
@@ -41,60 +64,29 @@ def decode_access_token(token: str):
         return payload
     except JWTError:
         return None
-    
-async def get_current_user(request: Request):
+
+# ── HTTP routes (unchanged behaviour) ─────────────────────────
+async def get_current_user(request: Request) -> str:
     token = request.cookies.get("access_token")
-    
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
         )
-
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-
-        if payload.get("type") != "access":
-            raise HTTPException(status_code=401, detail="Invalid token type")
-
-        user_id = payload.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
-        return user_id
-
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
-        
+    return _decode_token(token)
+    
+# ── WebSocket routes ───────────────────────────────────────────
 async def get_current_user_ws(websocket: WebSocket) -> str | None:
-    """
-    WebSocket-compatible version of get_current_user.
-    Reads access_token from cookies in the WS handshake.
-    Returns user_id on success, or closes the socket and returns None on failure.
-    """
-    logger.info("WS cookies: %s", dict(websocket.cookies))
-    logger.info("WS headers: %s", dict(websocket.headers))
-    token = websocket.cookies.get("access_token")
-    logger.info("Token found: %s", bool(token))
+    token = (
+        websocket.query_params.get("token")       # production path
+        or websocket.cookies.get("access_token")  # local dev fallback
+    )
     if not token:
-        await websocket.close(code=4001)  # 4001 = unauthorized
+        await websocket.close(code=4001)
         return None
 
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("type") != "access":
-            await websocket.close(code=4001)
-            return None
-
-        user_id = payload.get("sub")
-        if not user_id:
-            await websocket.close(code=4001)
-            return None
-
-        return user_id
-    except JWTError:
+        return _decode_token(token)
+    except HTTPException:
         await websocket.close(code=4001)
         return None
