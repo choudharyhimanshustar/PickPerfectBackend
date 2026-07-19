@@ -8,7 +8,6 @@ from botocore.exceptions import NoCredentialsError
 from pydantic import BaseModel
 from src.database.schemas.auth import get_current_user
 from fastapi import Depends, HTTPException
-import mimetypes
 import subprocess
 from typing import List
 import asyncio
@@ -84,13 +83,17 @@ async def generate_presigned_url(
 
         await mongodb.db["videos"].insert_one(metadata_doc)
 
-        # 🔹 Generate video presigned URL
+        # 🔹 Generate video presigned URL.
+        # Do NOT pin ContentType here: it would become a signed header, and the
+        # browser sends the file's real type (e.g. video/quicktime for .mov),
+        # which then mismatches the signature and S3 returns 403. Leaving it
+        # unsigned lets any video type upload; S3 still stores the Content-Type
+        # the browser sends as object metadata.
         video_presigned_url = s3_client.generate_presigned_url(
             "put_object",
             Params={
                 "Bucket": bucket_name,
                 "Key": video_s3_key,
-                "ContentType": "video/mp4"
             },
             ExpiresIn=3600
         )
@@ -102,16 +105,15 @@ async def generate_presigned_url(
             }
         }
 
-        # 🔹 Generate thumbnail presigned URL if needed
+        # 🔹 Generate thumbnail presigned URL if needed.
+        # Same reasoning as the video URL: don't sign ContentType, or a mismatch
+        # between the signed type and the browser-sent type causes a 403.
         if thumbnail_s3_key:
-            content_type, _ = mimetypes.guess_type(thumbnail_s3_key)
-            print(f"Generated content type for thumbnail: {content_type}")
             thumb_presigned_url = s3_client.generate_presigned_url(
                 "put_object",
                 Params={
                     "Bucket": bucket_name,
                     "Key": thumbnail_s3_key,
-                    "ContentType": content_type or "image/jpeg"
                 },
                 ExpiresIn=3600
             )
