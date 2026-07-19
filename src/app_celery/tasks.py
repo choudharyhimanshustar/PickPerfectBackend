@@ -71,9 +71,16 @@ def generate_thumbnail_task(self, video_data):
     if not video:
         raise ValueError(f"Video not found for {video_data}")
 
-    # skip if already exists
+    # skip generation if a thumbnail already exists (user-provided, or an
+    # idempotent re-run) — but still mark it ready, otherwise thumbnail_status
+    # stays "pending" forever and the UI never shows it.
     if video.get("thumbnail_s3_key"):
-        print("Thumbnail already exists, skipping...")
+        print("Thumbnail already exists, marking ready and skipping generation...")
+        if video.get("thumbnail_status") != "ready":
+            mongodb_sync.db["videos"].update_one(
+                {"video_s3_key": video_data["video_s3_key"]},
+                {"$set": {"thumbnail_status": "ready", "updated_at": datetime.now(timezone.utc)}},
+            )
         return video_data
 
     try:

@@ -55,15 +55,11 @@ def migrate(dry_run: bool = False) -> None:
             new_status = "processed"
 
         # ── thumbnail status ─────────────────────────────────────────────
-        if "thumbnail_status" in doc and doc["thumbnail_status"] in (
-            "pending", "ready", "failed"
-        ):
-            new_thumb = doc["thumbnail_status"]
-        elif has_thumb:
+        # A thumbnail key present is authoritative — it means the thumbnail is
+        # ready, regardless of any stale "pending" left in the field.
+        if has_thumb or legacy_status == "READY":
             new_thumb = "ready"
-        elif legacy_status == "READY":
-            new_thumb = "ready"
-        elif legacy_status == "failed" and not has_thumb:
+        elif doc.get("thumbnail_status") == "failed" or legacy_status == "failed":
             # A failed doc with no thumbnail was most likely a thumbnail failure.
             new_thumb = "failed"
         else:
