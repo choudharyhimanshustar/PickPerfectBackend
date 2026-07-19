@@ -343,13 +343,15 @@ def save_analysis_result(s3_key, chord_result, rhythm_result, performance_score)
     if mongodb_sync.db is None:
         raise RuntimeError("MongoDB (sync) not initialized")
 
+    # Note: the terminal `status` ("processed") is set by process_music_video via
+    # update_video_status right after this — don't write an intermediate status
+    # here or it just gets overwritten.
     update_payload = {
         "analysis": {
             "chords": chord_result,
             "rhythm": rhythm_result,
             "performance_score": performance_score,
         },
-        "status": "analyzed",
         "analyzed_at": datetime.utcnow(),
     }
 

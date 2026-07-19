@@ -12,24 +12,37 @@ class VideoMetadata(BaseModel):
     video_s3_key: str                     # was wrongly named s3_key
     thumbnail_s3_key: Optional[str] = None
 
-    status: str = Field(default="pending")  # your db uses "processed", not "READY"
+    # Processing lifecycle (analysis pipeline). See VideoStatus.
+    status: str = Field(default="pending_upload")
+    # Thumbnail lifecycle — tracked independently of processing. See ThumbnailStatus.
+    thumbnail_status: str = Field(default="pending")
 
     analysis: Optional[Any] = None        # was missing
     analyzed_at: Optional[datetime] = None  # was missing
-    thumbnail_requested_at: Optional[datetime] = None 
+    thumbnail_requested_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     # removed: mime_type, file_size, duration, resolution, fps (not in your db)
 
     model_config = {"populate_by_name": True}  # allows both _id and id
-    
+
+# ── Canonical status vocabularies — the single source of truth ────────────
+# Two INDEPENDENT concerns, one field each. Every write in the codebase must
+# go through these enums so string comparisons never silently miss.
+
 class VideoStatus(str, Enum):
-    pending_upload = "pending_upload"   # video uploading to S3
-    pending        = "pending"          # uploaded, awaiting processing  
-    processed      = "processed"        # celery done
-    failed         = "failed"           # timed out / lost
-    ready          = "READY"            # thumbnail ready
+    """Processing / analysis lifecycle (the `status` field)."""
+    pending_upload = "pending_upload"   # record created, awaiting upload + processing
+    processing     = "processing"       # analysis pipeline running
+    processed      = "processed"        # analysis complete
+    failed         = "failed"           # processing failed / timed out
+
+class ThumbnailStatus(str, Enum):
+    """Thumbnail lifecycle (the `thumbnail_status` field)."""
+    pending = "pending"                 # not generated yet
+    ready   = "ready"                   # generated + uploaded
+    failed  = "failed"                  # generation failed (retryable)
     
 async def get_video(video_id: str, user_id: str) -> VideoMetadata:
     raw = await mongodb.db["videos"].find_one({"_id": video_id, "user_id": user_id})

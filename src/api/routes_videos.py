@@ -16,7 +16,7 @@ import json
 from sse_starlette.sse import EventSourceResponse
 from src.utils.video_helpers import get_presigned_download_url
 from src.database.schemas.metadata import get_video
-from src.database.schemas.metadata import VideoStatus
+from src.database.schemas.metadata import VideoStatus, ThumbnailStatus
 import logging
 from src.app_celery.tasks import  generate_thumbnail_task
 from fastapi import WebSocket, WebSocketDisconnect
@@ -75,8 +75,9 @@ async def generate_presigned_url(
             "original_filename": video_name,
             "video_s3_key": video_s3_key,
             "thumbnail_s3_key": thumbnail_s3_key,
-            "thumbnail_requested_at": datetime.utcnow(), 
-            "status": "PENDING_UPLOAD",
+            "thumbnail_requested_at": datetime.utcnow(),
+            "status": VideoStatus.pending_upload.value,
+            "thumbnail_status": ThumbnailStatus.pending.value,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }
@@ -130,7 +131,7 @@ async def generate_presigned_url(
 async def get_video_analysis(video_id: str, user_id: str = Depends(get_current_user)):
     video = await get_video(video_id, user_id)
 
-    if video.status != "processed":
+    if video.status != VideoStatus.processed.value:
         raise HTTPException(400, detail=f"Analysis not ready. Current status: {video.status}")
 
     return {
@@ -156,17 +157,19 @@ async def thumbnail_progress(
             while pending_ids:
                 await asyncio.sleep(3)
 
+                # Do NOT filter on thumbnail_s3_key here — a failed thumbnail has
+                # no key, and filtering it out would make failures undetectable.
                 videos = await mongodb.db["videos"].find({
                     "_id": {"$in": list(pending_ids)},
                     "user_id": user_id,
-                    "thumbnail_s3_key": {"$exists": True, "$ne": None}
                 }).to_list(length=None)
 
                 for video in videos:
                     vid_id = str(video["_id"])
-                    status = video["status"]
-                    print(f"Checking video {vid_id}: status={status}")
-                    if status == VideoStatus.failed:
+                    thumb_status = video.get("thumbnail_status", ThumbnailStatus.pending.value)
+                    logger.info("SSE checking video %s: thumbnail_status=%s", vid_id, thumb_status)
+
+                    if thumb_status == ThumbnailStatus.failed.value:
                         # emit failed event — frontend shows retry button
                         yield {
                             "event": "thumbnail_failed",
@@ -175,13 +178,13 @@ async def thumbnail_progress(
                                 "thumbnail_status": "failed",
                             })
                         }
+                        pending_ids.discard(vid_id)
 
-                    elif status == VideoStatus.ready and video.get("thumbnail_s3_key"):
+                    elif thumb_status == ThumbnailStatus.ready.value and video.get("thumbnail_s3_key"):
                         thumbnail_url = get_presigned_download_url(
                             s3_client, bucket_name, video["thumbnail_s3_key"]
                         )
-                        print(f"Thumbnail ready for video {vid_id}, emitting event with URL: {thumbnail_url}")
-                        # logger.info(f"Thumbnail ready for video {vid_id}, emitting event with URL: {thumbnail_url}")
+                        logger.info("Thumbnail ready for video %s", vid_id)
                         yield {
                             "event": "thumbnail_ready",
                             "data": json.dumps({
@@ -190,10 +193,10 @@ async def thumbnail_progress(
                                 "thumbnail_status": "ready",
                             })
                         }
+                        pending_ids.discard(vid_id)
+                    # else: still pending — keep watching until ready/failed
 
-                    pending_ids.remove(vid_id)  # remove regardless — ready or failed
-
-                print(f"[SSE] {len(pending_ids)} videos still pending")
+                logger.info("[SSE] %d videos still pending", len(pending_ids))
 
             yield {"event": "done", "data": json.dumps({"message": "all videos settled"})}
 
@@ -218,10 +221,10 @@ async def retry_thumbnail(
 ):
     video = await get_video(video_id, user_id)
 
-    if video.status != VideoStatus.failed:
+    if video.thumbnail_status != ThumbnailStatus.failed.value:
         raise HTTPException(
             status_code=400,
-            detail=f"Only failed videos can be retried. Current status: {video.status}"
+            detail=f"Only failed thumbnails can be retried. Current thumbnail_status: {video.thumbnail_status}"
         )
 
     now = datetime.utcnow()
@@ -229,7 +232,7 @@ async def retry_thumbnail(
     await mongodb.db["videos"].update_one(
         {"_id": video_id},
         {"$set": {
-            "status": VideoStatus.pending,
+            "thumbnail_status": ThumbnailStatus.pending.value,
             "thumbnail_requested_at": now,   # ← resets the 15min clock
             "updated_at": now,
         }}
@@ -241,7 +244,7 @@ async def retry_thumbnail(
         "user_id": user_id,
     })
 
-    return {"video_id": video_id, "status": VideoStatus.pending}
+    return {"video_id": video_id, "thumbnail_status": ThumbnailStatus.pending.value}
 
 
 

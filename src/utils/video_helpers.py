@@ -21,9 +21,11 @@ def serialize_video(video: dict, s3_client, bucket_name: str) -> dict:
     )
     
 
+    # Prefer the explicit thumbnail_status field; fall back to presence of the
+    # S3 key for older docs written before the field existed.
     if has_thumbnail:
         thumbnail_status = "ready"
-    elif video.get("status") == "failed":
+    elif video.get("thumbnail_status") == "failed":
         thumbnail_status = "failed"
     else:
         thumbnail_status = "processing"

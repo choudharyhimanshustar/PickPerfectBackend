@@ -32,8 +32,10 @@ def generate_thumbnail_service(video, bucket_name, s3_client, mongodb):
             thumb_local
         ], check=True)
 
-        # 3. Upload
-        thumbnail_key = video_key.replace("videos/", "thumbnails/").replace(".mp4", ".png")
+        # 3. Upload — derive the key from the actual extension, not a hardcoded
+        #    ".mp4" (which broke .mov/.webm uploads).
+        thumbnail_base, _ = os.path.splitext(video_key.replace("videos/", "thumbnails/"))
+        thumbnail_key = f"{thumbnail_base}.png"
 
         s3_client.upload_file(
             thumb_local,
@@ -42,13 +44,13 @@ def generate_thumbnail_service(video, bucket_name, s3_client, mongodb):
             ExtraArgs={"ContentType": "image/png"}
         )
 
-        # 4. Update DB
+        # 4. Update DB — mark thumbnail ready (independent of processing status)
         mongodb.db["videos"].update_one(
             {"video_s3_key": video_key},
             {
                 "$set": {
                     "thumbnail_s3_key": thumbnail_key,
-                    "status": "READY"
+                    "thumbnail_status": "ready",
                 }
             }
         )

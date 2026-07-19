@@ -21,7 +21,7 @@ def publish_progress(
     step: str,
     message: str,
     percent: int,
-    event_type: str = "progress",
+    event_type: str = "processing",
     error: str | None = None,
 ):
     """

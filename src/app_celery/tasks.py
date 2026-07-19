@@ -70,14 +70,22 @@ def generate_thumbnail_task(self, video_data):
     
     if not video:
         raise ValueError(f"Video not found for {video_data}")
-    
+
     # skip if already exists
     if video.get("thumbnail_s3_key"):
         print("Thumbnail already exists, skipping...")
         return video_data
 
-    result = generate_thumbnail_service(video, bucket_name, s3_client, mongodb_sync)
-    
+    try:
+        result = generate_thumbnail_service(video, bucket_name, s3_client, mongodb_sync)
+    except Exception:
+        # Mark the thumbnail (not the whole video) failed so the UI can offer retry.
+        mongodb_sync.db["videos"].update_one(
+            {"video_s3_key": video_data["video_s3_key"]},
+            {"$set": {"thumbnail_status": "failed", "updated_at": datetime.now(timezone.utc)}},
+        )
+        raise
+
     receipt_handle = video_data.get("receipt_handle")
     if receipt_handle:
         try:
@@ -101,7 +109,9 @@ def mark_stale_pending_as_failed():
 
     result = mongodb_sync.db["videos"].update_many(
         {
-            "status": {"$in": ["PENDING_UPLOAD", "pending"]},
+            # Only videos that never entered processing. A video mid-analysis is
+            # "processing" and is deliberately excluded so we don't kill live jobs.
+            "status": "pending_upload",
             "thumbnail_requested_at": {"$lt": cutoff, "$exists": True},
         },
         {
@@ -162,7 +172,7 @@ def requeue_from_dlq():
                 result = mongodb_sync.db["videos"].update_one(
                     {"_id": video_id},
                     {"$set": {
-                        "status": "pending",
+                        "status": "pending_upload",
                         "thumbnail_requested_at": datetime.now(timezone.utc),
                     }},
                 )
@@ -232,6 +242,9 @@ def process_music_video(video_data: dict):
         video_id = ""
 
     try:
+        # Mark the video as actively processing so the stale-marker leaves it
+        # alone and the UI can distinguish "queued" from "in progress".
+        update_video_status(s3_key, "processing")
         publish_progress(video_id, "video_received", "Video received, starting pipeline...", 5)
 
         publish_progress(video_id, "downloading", "Downloading video from S3...", 15)
@@ -265,9 +278,11 @@ def process_music_video(video_data: dict):
         update_video_status(s3_key, "processed")
         logger.info("Updated video status to 'processed' for %s", s3_key)
 
-        publish_progress(video_id, "completed", "Processing complete!", 100, event_type="completed")
+        # Terminal event: `type` must match the canonical status ("processed"),
+        # while `step` ("processed") drives the final stepper row on the client.
+        publish_progress(video_id, "processed", "Processing complete!", 100, event_type="processed")
 
-        return {"s3_key": s3_key, "status": "completed"}
+        return {"s3_key": s3_key, "status": "processed"}
 
     except Exception as e:
         logger.exception("process_music_video failed for %s", s3_key)
