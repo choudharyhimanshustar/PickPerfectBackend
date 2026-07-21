@@ -75,7 +75,10 @@ async def generate_presigned_url(
             "video_s3_key": video_s3_key,
             "thumbnail_s3_key": thumbnail_s3_key,
             "thumbnail_requested_at": datetime.utcnow(),
-            "status": VideoStatus.pending_upload.value,
+            # Not yet uploaded — the client confirms via /confirm-upload once the
+            # S3 PUT succeeds. Until then this doc is hidden from the grid and
+            # gets garbage-collected if the upload is abandoned.
+            "status": VideoStatus.awaiting_upload.value,
             "thumbnail_status": ThumbnailStatus.pending.value,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
@@ -99,6 +102,7 @@ async def generate_presigned_url(
         )
 
         response = {
+            "video_id": video_id,
             "video": {
                 "key": video_s3_key,
                 "url": video_presigned_url
@@ -127,9 +131,44 @@ async def generate_presigned_url(
 
     except NoCredentialsError:
         raise HTTPException(status_code=500, detail="AWS credentials not found")
-    
- 
-@router.get("/{video_id}/analysis")    
+
+
+@router.post("/{video_id}/confirm-upload")
+async def confirm_upload(
+    video_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """
+    Called by the client after the S3 PUT succeeds. Promotes the doc from
+    awaiting_upload -> pending_upload so it becomes visible and eligible for
+    processing. If the upload failed, the client never calls this and the doc
+    is garbage-collected by the stale-marker.
+    """
+    now = datetime.utcnow()
+    result = await mongodb.db["videos"].update_one(
+        {
+            "_id": video_id,
+            "user_id": user_id,
+            "status": VideoStatus.awaiting_upload.value,
+        },
+        {"$set": {
+            "status": VideoStatus.pending_upload.value,
+            "thumbnail_requested_at": now,  # start the processing clock at upload time
+            "updated_at": now,
+        }},
+    )
+
+    if result.matched_count == 0:
+        # not found, not owned, or already confirmed
+        raise HTTPException(
+            status_code=404,
+            detail="No awaiting-upload video found to confirm",
+        )
+
+    return {"video_id": video_id, "status": VideoStatus.pending_upload.value}
+
+
+@router.get("/{video_id}/analysis")
 async def get_video_analysis(video_id: str, user_id: str = Depends(get_current_user)):
     video = await get_video(video_id, user_id)
 

@@ -114,10 +114,20 @@ def mark_stale_pending_as_failed():
 
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_THRESHOLD_MINUTES)
 
+    # 1. Abandoned uploads (presigned URL issued, PUT never confirmed) have no
+    #    real S3 object and no value — delete them outright.
+    deleted = mongodb_sync.db["videos"].delete_many(
+        {
+            "status": "awaiting_upload",
+            "thumbnail_requested_at": {"$lt": cutoff, "$exists": True},
+        }
+    )
+
+    # 2. Confirmed uploads that never entered processing -> mark failed. A video
+    #    mid-analysis is "processing" and is deliberately excluded here so we
+    #    don't kill live jobs.
     result = mongodb_sync.db["videos"].update_many(
         {
-            # Only videos that never entered processing. A video mid-analysis is
-            # "processing" and is deliberately excluded so we don't kill live jobs.
             "status": "pending_upload",
             "thumbnail_requested_at": {"$lt": cutoff, "$exists": True},
         },
@@ -129,8 +139,14 @@ def mark_stale_pending_as_failed():
         }
     )
 
-    logger.info(f"[beat] Marked {result.modified_count} stale videos as failed")
-    return {"marked_failed": result.modified_count}
+    logger.info(
+        "[beat] Deleted %d abandoned uploads, marked %d stale videos as failed",
+        deleted.deleted_count, result.modified_count,
+    )
+    return {
+        "deleted_abandoned": deleted.deleted_count,
+        "marked_failed": result.modified_count,
+    }
 
 @celery_app.task(name="requeue_from_dlq")
 def requeue_from_dlq():

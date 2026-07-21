@@ -33,10 +33,11 @@ class VideoMetadata(BaseModel):
 
 class VideoStatus(str, Enum):
     """Processing / analysis lifecycle (the `status` field)."""
-    pending_upload = "pending_upload"   # record created, awaiting upload + processing
-    processing     = "processing"       # analysis pipeline running
-    processed      = "processed"        # analysis complete
-    failed         = "failed"           # processing failed / timed out
+    awaiting_upload = "awaiting_upload"  # presigned URL issued, S3 upload not yet confirmed
+    pending_upload  = "pending_upload"   # upload confirmed, awaiting processing
+    processing      = "processing"       # analysis pipeline running
+    processed       = "processed"        # analysis complete
+    failed          = "failed"           # processing failed / timed out
 
 class ThumbnailStatus(str, Enum):
     """Thumbnail lifecycle (the `thumbnail_status` field)."""

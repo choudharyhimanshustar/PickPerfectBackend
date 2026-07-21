@@ -86,8 +86,10 @@ async def root():
 @app.get("/all-videos")
 async def get_all_videos(user_id: str = Depends(get_current_user)):
 
+    # Exclude docs whose upload was never confirmed — they'd otherwise show as
+    # broken cards. They are promoted by /videos/{id}/confirm-upload or GC'd.
     videos = await mongodb.db["videos"].find(
-        {"user_id": user_id}
+        {"user_id": user_id, "status": {"$ne": "awaiting_upload"}}
     ).to_list(length=None)
 
     video_list = [serialize_video(video, s3_client, bucket_name) for video in videos]
