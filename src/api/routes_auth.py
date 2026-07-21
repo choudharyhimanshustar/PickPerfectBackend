@@ -1,6 +1,8 @@
 # routes/auth.py
 from fastapi import APIRouter, HTTPException, status, Response, Request, Depends
 from fastapi.responses import JSONResponse
+from bson import ObjectId
+from bson.errors import InvalidId
 from src.database.schemas.auth import SignupRequest, LoginRequest
 from src.database.collections import get_users_collection
 from src.core.security import hash_password,verify_password
@@ -92,10 +94,26 @@ async def me(request: Request):
             detail="Invalid or expired token",
         )
 
+    # The token only carries `sub` (the user id) — profile fields like email
+    # live in the DB, so look the user up here. This keeps the token minimal
+    # and always returns fresh data (survives token refresh).
+    user_id = payload.get("sub")
+    try:
+        user = await get_users_collection().find_one({"_id": ObjectId(user_id)})
+    except InvalidId:
+        user = None
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
+
     return {
         "authenticated": True,
-        "user_id": payload.get("sub"),
-        "email": payload.get("email"),
+        "user_id": user_id,
+        "email": user.get("email"),
+        "created_at": user.get("created_at"),
     }
     
 @router.post("/refresh")
