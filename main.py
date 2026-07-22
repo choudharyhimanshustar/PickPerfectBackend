@@ -96,15 +96,6 @@ async def get_all_videos(user_id: str = Depends(get_current_user)):
 
     return {"videos": video_list}
 
-@app.post("/webhook")
-async def webhook(data: dict):
-    print("Webhook received:", data)
-
-    # do DB update here:
-    # update video status from "uploading" to "uploaded"
-    
-    return {"received": True}
-
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))

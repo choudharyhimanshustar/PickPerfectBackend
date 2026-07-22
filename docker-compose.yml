@@ -27,6 +27,37 @@ services:
       - redis
     restart: unless-stopped
 
+  # Runs the scheduled Celery tasks defined in celery_app.beat_schedule
+  # (mark-stale-pending-as-failed, requeue-from-dlq). A worker alone does
+  # not tick the schedule — Beat is what fires them.
+  celery-beat:
+    build: .
+    command: celery -A src.app_celery.celery_app beat --loglevel=info
+    volumes:
+      - .:/app
+    env_file:
+      - .env.development
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # Drains the SQS queue (fed by the S3-upload Lambda) and kicks off the
+  # Celery processing chain. Without this, uploaded videos are never consumed.
+  sqs-poller:
+    build: .
+    command: python -m src.app_celery.sqs_poller
+    volumes:
+      - .:/app
+    env_file:
+      - .env.development
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     ports:
