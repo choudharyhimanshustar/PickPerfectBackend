@@ -9,6 +9,8 @@ class VideoMetadata(BaseModel):
     id: str = Field(..., alias="_id")
     user_id: str                          # was missing
     original_filename: str
+    title: Optional[str] = None           # user-supplied; defaults to filename
+    description: Optional[str] = None      # user-supplied; optional
     video_s3_key: str                     # was wrongly named s3_key
     thumbnail_s3_key: Optional[str] = None
 

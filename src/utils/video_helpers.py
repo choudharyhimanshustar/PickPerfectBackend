@@ -33,6 +33,9 @@ def serialize_video(video: dict, s3_client, bucket_name: str) -> dict:
     return {
         "video_id": str(video["_id"]),
         "filename": video["original_filename"],
+        # Fall back to the filename for older docs written before title existed.
+        "title": video.get("title") or video["original_filename"],
+        "description": video.get("description"),
         "video_url": video_url,
         "thumbnail_url": thumbnail_url,
         "thumbnail_status": thumbnail_status,

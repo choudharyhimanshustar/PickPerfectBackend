@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from src.database.schemas.auth import get_current_user
 from fastapi import Depends, HTTPException
 import subprocess
-from typing import List
+from typing import List, Optional
 import asyncio
 import json 
 from sse_starlette.sse import EventSourceResponse
@@ -44,15 +44,28 @@ class S3UploadEvent(BaseModel):
     status: str
     bucket: str
     key: str
-    
+
+
+# Bounds so user-typed metadata can't grow the doc unboundedly.
+MAX_TITLE_LEN = 200
+MAX_DESCRIPTION_LEN = 2000
+
+
+class PresignedUrlRequest(BaseModel):
+    videoName: str
+    thumbnailName: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+
 @router.post("/generate-presigned-url")
 async def generate_presigned_url(
-    payload: dict,
+    payload: PresignedUrlRequest,
     user_id: str = Depends(get_current_user)
 ):
     try:
-        video_name = payload.get("videoName")
-        thumbnail_name = payload.get("thumbnailName")
+        video_name = payload.videoName
+        thumbnail_name = payload.thumbnailName
 
         if not video_name:
             raise HTTPException(status_code=400, detail="videoName required")
@@ -67,11 +80,21 @@ async def generate_presigned_url(
             thumb_extension = thumbnail_name.split(".")[-1]
             thumbnail_s3_key = f"thumbnails/{user_id}/{video_id}.{thumb_extension}"
 
+        # Title falls back to the filename (extension stripped) when the user
+        # leaves it blank, so there's always something to display. Description
+        # stays None when empty. Both are trimmed and length-capped.
+        title = ((payload.title or "").strip() or video_name.rsplit(".", 1)[0])[:MAX_TITLE_LEN]
+        description = ((payload.description or "").strip() or None)
+        if description:
+            description = description[:MAX_DESCRIPTION_LEN]
+
         # 🔹 Create metadata doc (thumbnail may be None)
         metadata_doc = {
             "_id": video_id,
             "user_id": user_id,
             "original_filename": video_name,
+            "title": title,
+            "description": description,
             "video_s3_key": video_s3_key,
             "thumbnail_s3_key": thumbnail_s3_key,
             "thumbnail_requested_at": datetime.utcnow(),
