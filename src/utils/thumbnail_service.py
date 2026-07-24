@@ -7,6 +7,25 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+VIDEO_PREFIX = "videos/"
+THUMBNAIL_PREFIX = "thumbnails/"
+
+
+def thumbnail_prefix_for(video_key: str) -> str:
+    """
+    videos/{user_id}/{video_id}.{ext} -> thumbnails/{user_id}/{video_id}
+
+    Extension-agnostic: os.path.splitext drops whatever the real extension is
+    (.mov, .webm, .MP4) instead of matching one hardcoded string. The caller
+    appends the extension of whatever it actually wrote.
+    """
+    base, _ = os.path.splitext(video_key)
+    if base.startswith(VIDEO_PREFIX):
+        return THUMBNAIL_PREFIX + base[len(VIDEO_PREFIX):]
+    logger.warning("Video key %r has no %r prefix; nesting under it anyway", video_key, VIDEO_PREFIX)
+    return THUMBNAIL_PREFIX + base.lstrip("/")
+
+
 def generate_thumbnail_service(video, bucket_name, s3_client, mongodb):
     video_key = video["video_s3_key"]
     logger.info(f"Generating thumbnail for video: {video_key}")
@@ -32,10 +51,12 @@ def generate_thumbnail_service(video, bucket_name, s3_client, mongodb):
             thumb_local
         ], check=True)
 
-        # 3. Upload — derive the key from the actual extension, not a hardcoded
-        #    ".mp4" (which broke .mov/.webm uploads).
-        thumbnail_base, _ = os.path.splitext(video_key.replace("videos/", "thumbnails/"))
-        thumbnail_key = f"{thumbnail_base}.png"
+        # 3. Upload — rebuild the key structurally rather than find-and-replacing
+        #    inside it. Substring swaps silently no-op on the extensions they
+        #    don't know about (the old ".mp4" -> ".png" left .mov/.webm keys
+        #    describing a PNG as a video) and would rewrite a stray "videos/"
+        #    anywhere in the path.
+        thumbnail_key = f"{thumbnail_prefix_for(video_key)}.png"
 
         s3_client.upload_file(
             thumb_local,
